@@ -1,15 +1,15 @@
 import javax.swing.*;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
+import javax.swing.event.DocumentEvent; 
+import javax.swing.event.DocumentListener; 
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.AffineTransform;
+import java.math.BigInteger;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
-// Clase para representar una arista dirigida con un peso
 class Edge {
     public final String source;
     public final String target;
@@ -26,8 +26,6 @@ class Edge {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Edge edge = (Edge) o;
-        // Para la igualdad de aristas, consideramos origen, destino Y peso.
-        // Esto es importante para almacenar aristas explícitas únicas.
         return weight == edge.weight &&
                Objects.equals(source, edge.source) &&
                Objects.equals(target, edge.target);
@@ -35,7 +33,6 @@ class Edge {
 
     @Override
     public int hashCode() {
-        // Un hash basado en origen, destino y peso.
         return Objects.hash(source, target, weight);
     }
 
@@ -46,13 +43,8 @@ class Edge {
 }
 
 class Graph {
-    private final Map<String, Integer> nodesChips;
-    // allDirectedEdges: Almacena TODAS las aristas dirigidas y sus pesos (explícitas e implícitas).
-    // Se utiliza para los cálculos del juego (n_ij).
-    // Clave: nodo origen, Valor: Mapa<nodo destino, peso>
+    private final Map<String, BigInteger> nodesChips;
     private final Map<String, Map<String, Integer>> allDirectedEdges;
-    // explicitEdges: Almacena SÓLO las aristas dirigidas que fueron añadidas explícitamente por el usuario.
-    // Se utiliza para la lógica de dibujo.
     private final Set<Edge> explicitEdges;
     private final Set<String> specialNodesLogicalNames;
 
@@ -65,8 +57,8 @@ class Graph {
 
     public void addNode(String nodeName) {
         if (!nodesChips.containsKey(nodeName)) {
-            nodesChips.put(nodeName, 0);
-            allDirectedEdges.put(nodeName, new ConcurrentHashMap<>()); // Asegurarse de que el mapa de aristas salientes exista
+            nodesChips.put(nodeName, BigInteger.ZERO);
+            allDirectedEdges.put(nodeName, new ConcurrentHashMap<>());
             System.out.println("Nodo '" + nodeName + "' añadido al grafo lógico.");
         } else {
             System.out.println("Advertencia: El nodo '" + nodeName + "' ya existe en el grafo lógico.");
@@ -85,18 +77,14 @@ class Graph {
         }
         
         specialNodesLogicalNames.add(newSpecialNodeLogicalName);
-        nodesChips.put(newSpecialNodeLogicalName, 1); // Los nodos especiales comienzan con 1 ficha
-        allDirectedEdges.put(newSpecialNodeLogicalName, new ConcurrentHashMap<>()); // Asegurarse de que el mapa de aristas salientes exista
+        nodesChips.put(newSpecialNodeLogicalName, BigInteger.ONE);
+        allDirectedEdges.put(newSpecialNodeLogicalName, new ConcurrentHashMap<>());
 
-        // Un nodo especial SIEMPRE tiene una arista DIRECTA y con peso 1 hacia su nodo base.
-        // Esta arista es EXPLÍCITA y no debe activar la regla de arista inversa implícita.
         addDirectedEdgeInternal(newSpecialNodeLogicalName, targetNodeLogicalName, 1, true); 
         System.out.println("Nodo especial '" + newSpecialNodeLogicalName + "' añadido, conectado directamente a '" + targetNodeLogicalName + "'.");
         return newSpecialNodeLogicalName;
     }
 
-    // Helper interno para añadir/actualizar cualquier arista dirigida (explícita o implícita)
-    // Esto actualiza el mapa allDirectedEdges y, si es explícita, el conjunto explicitEdges.
     private void addDirectedEdgeInternal(String source, String target, int weight, boolean isExplicit) {
         if (!nodesChips.containsKey(source) || !nodesChips.containsKey(target)) {
             throw new IllegalArgumentException("Error: Ambos nodos (origen y destino) deben existir.");
@@ -106,21 +94,14 @@ class Graph {
             return;
         }
 
-        // Añadir a allDirectedEdges (para cálculos de la lógica del juego)
         allDirectedEdges.computeIfAbsent(source, k -> new ConcurrentHashMap<>()).put(target, weight);
 
-        // Gestionar aristas explícitas para el dibujo
         if (isExplicit) {
-            // Eliminar cualquier arista explícita existente con el mismo origen/destino antes de añadir la nueva.
-            // Esto asegura que si se añade una arista con el mismo origen/destino pero diferente peso, se actualice.
             explicitEdges.removeIf(e -> e.source.equals(source) && e.target.equals(target));
             explicitEdges.add(new Edge(source, target, weight));
         }
-        // System.out.println("Arista dirigida interna procesada: " + source + "->" + target + ":" + weight + " (Explícita: " + isExplicit + ")");
     }
 
-
-    // Este método es para aristas DIRIGIDAS añadidas por el usuario (desde el botón "Activar Modo Arista Dirigida")
     public void addDirectedEdge(String source, String target, int weight) {
         if (isSpecialNode(target)) {
              throw new IllegalArgumentException("No se pueden añadir aristas dirigidas hacia un nodo especial con este método. Los nodos especiales solo tienen una arista saliente hacia su nodo base.");
@@ -129,11 +110,8 @@ class Graph {
             throw new IllegalArgumentException("Un nodo especial solo puede tener una arista saliente hacia su nodo base.");
         }
 
-        // 1. Añadir la arista explícita (Origen -> Destino con peso W)
         addDirectedEdgeInternal(source, target, weight, true);
 
-        // 2. Gestionar la arista inversa implícita (Destino -> Origen con peso 1)
-        // Comprobar si hay una arista *explícita* desde el destino hacia el origen
         boolean hasExplicitReverse = false;
         for (Edge e : explicitEdges) {
             if (e.source.equals(target) && e.target.equals(source)) {
@@ -143,8 +121,6 @@ class Graph {
         }
 
         if (!hasExplicitReverse) {
-            // Añadir/actualizar la arista inversa implícita (Destino -> Origen con peso 1)
-            // Esta arista NO se añade a explicitEdges, por lo que no se dibujará.
             addDirectedEdgeInternal(target, source, 1, false);
             System.out.println("Arista dirigida '" + source + "' -> '" + target + "' con peso " + weight + " añadida. Inversa implícita (peso 1) también considerada.");
         } else {
@@ -152,24 +128,20 @@ class Graph {
         }
     }
 
-    // Este método es para aristas NO DIRIGIDAS (simples) añadidas por el usuario (desde el botón "Activar Modo Arista Simple")
     public void addUndirectedEdge(String node1, String node2) {
         if (isSpecialNode(node1) || isSpecialNode(node2)) {
             throw new IllegalArgumentException("No se pueden añadir aristas no dirigidas hacia/desde nodos especiales con este método.");
         }
-        // Las aristas simples se definen como dos aristas dirigidas explícitas de peso 1.
-        // Esto llamará a addDirectedEdge, que maneja la lógica interna incluyendo explicitEdges y allDirectedEdges.
-        // Si se añade node1-node2, significa que n_2,1=1 y n_1,2=1. Ambas son *explícitas* y deben dibujarse.
         addDirectedEdge(node1, node2, 1);
         addDirectedEdge(node2, node1, 1);
         System.out.println("Arista no dirigida añadida entre '" + node1 + "' y '" + node2 + "'.");
     }
 
-    public int getChips(String nodeName) {
-        return nodesChips.getOrDefault(nodeName, 0);
+    public BigInteger getChips(String nodeName) {
+        return nodesChips.getOrDefault(nodeName, BigInteger.ZERO);
     }
 
-    public void setChips(String nodeName, int chips) {
+    public void setChips(String nodeName, BigInteger chips) {
         if (nodesChips.containsKey(nodeName)) {
             nodesChips.put(nodeName, chips);
         } else {
@@ -177,8 +149,6 @@ class Graph {
         }
     }
 
-    // Este método proporciona las aristas entrantes y sus pesos necesarios para los cálculos del juego (n_ij c_j).
-    // Itera a través de allDirectedEdges para encontrar aristas donde 'nodeName' es el destino.
     public Map<String, Integer> getIncomingEdgesWithWeights(String nodeName) {
         Map<String, Integer> incoming = new ConcurrentHashMap<>();
         for (String sourceNode : allDirectedEdges.keySet()) {
@@ -189,7 +159,6 @@ class Graph {
         return incoming;
     }
 
-    // Devuelve el peso de una arista dirigida (desde allDirectedEdges, para la lógica del juego).
     public int getEdgeWeight(String source, String target) {
         return allDirectedEdges.getOrDefault(source, Collections.emptyMap()).getOrDefault(target, 0);
     }
@@ -198,7 +167,6 @@ class Graph {
         return new ArrayList<>(nodesChips.keySet());
     }
 
-    // Devuelve SÓLO las aristas EXPLÍCITAS para fines de dibujo.
     public Set<Edge> getExplicitEdges() {
         return Collections.unmodifiableSet(explicitEdges);
     }
@@ -223,7 +191,6 @@ class Graph {
         if (!isSpecialNode(specialNodeId)) {
             return null;
         }
-        // Un nodo especial solo tiene una arista saliente a su nodo base (que es explícita)
         Map<String, Integer> targets = allDirectedEdges.get(specialNodeId);
         if (targets != null && !targets.isEmpty()) {
             return targets.keySet().iterator().next();
@@ -237,20 +204,16 @@ class Graph {
             return;
         }
 
-        // Si el nodo a eliminar no es especial, verificar si tiene un nodo especial asociado y eliminarlo
         if (!isSpecialNode(nodeName)) {
             String associatedSpecialNode = nodeName + "'";
             if (isSpecialNode(associatedSpecialNode)) {
-                removeNode(associatedSpecialNode); // Llamada recursiva para eliminar el nodo especial
+                removeNode(associatedSpecialNode);
             }
         }
         
-        // Eliminar todas las aristas salientes del nodo en allDirectedEdges
         allDirectedEdges.remove(nodeName); 
-        // Eliminar las aristas explícitas relacionadas con este nodo (tanto origen como destino)
         explicitEdges.removeIf(e -> e.source.equals(nodeName) || e.target.equals(nodeName));
 
-        // Eliminar las referencias al nodo en las listas de adyacencia de otros nodos (aristas entrantes)
         for (String otherNode : allDirectedEdges.keySet()) {
             allDirectedEdges.get(otherNode).remove(nodeName);
         }
@@ -269,53 +232,50 @@ class KostantGame {
         this.graph = graph;
     }
 
-    // Calcula la suma ponderada de chips de los vecinos que tienen aristas entrantes al nodo
-    private int getNeighborsSum(String node) {
-        int sum = 0;
-        // Iterar sobre los nodos fuente (vecinos) que tienen aristas dirigidas hacia 'node'
+    private BigInteger getNeighborsSum(String node) {
+        BigInteger sum = BigInteger.ZERO;
         for (Map.Entry<String, Integer> entry : graph.getIncomingEdgesWithWeights(node).entrySet()) {
             String sourceNode = entry.getKey();
             int weight = entry.getValue();
-            sum += graph.getChips(sourceNode) * weight; // Suma (chips del vecino * peso de la arista)
+            sum = sum.add(graph.getChips(sourceNode).multiply(BigInteger.valueOf(weight))); 
         }
         return sum;
     }
 
     public String getNodeState(String node) {
         if (graph.isSpecialNode(node)) {
-            return "Happy"; // Los nodos especiales son siempre felices
+            return "Happy";
         }
 
-        int c_i = graph.getChips(node);
-        int sum_neighbors = getNeighborsSum(node);
-        double threshold = 0.5 * sum_neighbors;
+        BigInteger c_i = graph.getChips(node);
+        BigInteger sum_neighbors = getNeighborsSum(node);
+        
+        BigInteger two_c_i = c_i.multiply(BigInteger.TWO);
 
-        if (c_i < threshold) {
-            return "Sad"; // Triste
-        } else if (c_i > threshold) {
-            return "Excited"; // Emocionado
+        if (two_c_i.compareTo(sum_neighbors) < 0) {
+            return "Sad";
+        } else if (two_c_i.compareTo(sum_neighbors) > 0) {
+            return "Excited";
         } else {
-            return "Happy"; // Feliz (en equilibrio)
+            return "Happy";
         }
     }
 
     public void initializeGame(String specifiedInitialNodeLogicalName) {
-        // Reiniciar todos los chips a 0
         for (String node : graph.getAllNodes()) {
-            graph.setChips(node, 0);
+            graph.setChips(node, BigInteger.ZERO);
         }
 
-        // Si hay nodos especiales, inicializarlos con 1 chip. Deshabilita el modo estándar.
         if (!graph.getSpecialNodesLogicalNames().isEmpty()) {
             for (String specialNode : graph.getSpecialNodesLogicalNames()) {
-                graph.setChips(specialNode, 1);
+                graph.setChips(specialNode, BigInteger.ONE);
                 System.out.println("Juego modificado inicializado. El nodo especial '" + specialNode + "' tiene 1 chip.");
             }
-        } else { // Si no hay nodos especiales, inicializar con el nodo especificado.
+        } else {
             if (!graph.getAllNodes().contains(specifiedInitialNodeLogicalName)) {
                 throw new IllegalArgumentException("El nodo inicial '" + specifiedInitialNodeLogicalName + "' no existe en el grafo.");
             }
-            graph.setChips(specifiedInitialNodeLogicalName, 1);
+            graph.setChips(specifiedInitialNodeLogicalName, BigInteger.ONE);
             System.out.println("Juego estándar inicializado. El nodo '" + specifiedInitialNodeLogicalName + "' tiene 1 chip. Los demás tienen 0.");
         }
     }
@@ -330,7 +290,7 @@ class KostantGame {
         return unhappyNodes;
     }
 
-    public int performReflection(String nodeToReflect) {
+    public BigInteger performReflection(String nodeToReflect) {
         if (!graph.getAllNodes().contains(nodeToReflect)) {
             throw new IllegalArgumentException("El nodo '" + nodeToReflect + "' no existe en el grafo.");
         }
@@ -341,11 +301,10 @@ class KostantGame {
             throw new IllegalStateException("El nodo '" + nodeToReflect + "' no está triste y no puede ser reflejado.");
         }
 
-        int old_c_i = graph.getChips(nodeToReflect);
-        int sum_neighbors_c_j = getNeighborsSum(nodeToReflect);
+        BigInteger old_c_i = graph.getChips(nodeToReflect);
+        BigInteger sum_neighbors_c_j = getNeighborsSum(nodeToReflect);
         
-        // Fórmula de reflexión: c_i_nuevo = -c_i_viejo + sum(n_ij * c_j_vecinos)
-        int new_c_i = -old_c_i + sum_neighbors_c_j;
+        BigInteger new_c_i = old_c_i.negate().add(sum_neighbors_c_j);
         graph.setChips(nodeToReflect, new_c_i);
         System.out.println("Reflexión realizada en el nodo '" + nodeToReflect + "'. Los chips cambiaron de " + old_c_i + " a " + new_c_i + ".");
         return new_c_i;
@@ -357,10 +316,9 @@ class KostantGame {
             List<String> unhappyNodes = getUnhappyNodes();
             if (unhappyNodes.isEmpty()) {
                 System.out.println("El juego ha convergido: No quedan nodos tristes.");
-                break; // El juego ha terminado
+                break;
             }
 
-            // Estrategia simple: elegir el primer nodo triste para la reflexión.
             String nodeToReflect = unhappyNodes.get(0);
             try {
                 performReflection(nodeToReflect);
@@ -385,8 +343,6 @@ interface NodePlacementListener {
 }
 
 interface EdgeCreationListener {
-    // isUndirected se usa para aristas simples (no dirigidas, peso 1 en ambas direcciones)
-    // isDirected se usa para aristas dirigidas (con peso específico, en una dirección)
     void onEdgeCreated(String sourceNode, String targetNode, boolean isUndirected, boolean isDirected); 
     void onEdgeCreationCancelled(String message); 
     void onEdgeCreationError(String message);
@@ -403,10 +359,10 @@ class GraphPanel extends JPanel {
     private final Map<String, Point> nodePositions;
     private final int NODE_SIZE = 60;
     private String pendingNodeName = null;
-    private String firstNodeSelectedForEdge = null; // Nodo origen en modo arista
-    private boolean isSimpleEdgeMode = false; // Modo para añadir aristas simples no dirigidas por clic
-    private boolean isDirectedEdgeMode = false; // Nuevo: Modo para añadir aristas dirigidas por clic
-    private int currentDirectedEdgeWeight = 1; // Nuevo: Peso para las aristas dirigidas en modo clic
+    private String firstNodeSelectedForEdge = null;
+    private boolean isSimpleEdgeMode = false;
+    private boolean isDirectedEdgeMode = false;
+    private int currentDirectedEdgeWeight = 1;
     private boolean isNodeMode = false;
     private boolean isDeleteMode = false;
 
@@ -434,7 +390,7 @@ class GraphPanel extends JPanel {
                     for (Map.Entry<String, Point> entry : nodePositions.entrySet()) {
                         Point existingPos = entry.getValue();
                         double distance = existingPos.distance(x, y);
-                        if (distance < NODE_SIZE * 0.9) { // Evitar superposición de nodos
+                        if (distance < NODE_SIZE * 0.9) {
                             nodePlacementListener.onPlacementError("Ya hay un nodo muy cerca de esa posición. Elige otro lugar.");
                             return;
                         }
@@ -445,7 +401,7 @@ class GraphPanel extends JPanel {
                     nodePositions.put(pendingNodeName, new Point(x, y));
                     repaint();
                     nodePlacementListener.onNodePlaced(pendingNodeName);
-                } else if (isSimpleEdgeMode) { // Modo para añadir aristas simples (no dirigidas)
+                } else if (isSimpleEdgeMode) {
                     String clickedNode = getNodeAt(e.getPoint());
 
                     if (clickedNode == null) {
@@ -454,7 +410,6 @@ class GraphPanel extends JPanel {
                         return;
                     }
                     
-                    // No se permite añadir aristas no dirigidas hacia/desde un nodo especial
                     if (graph.isSpecialNode(clickedNode)) {
                          edgeCreationListener.onEdgeCreationError("No se pueden añadir aristas no dirigidas hacia/desde un nodo especial.");
                          resetSimpleEdgeMode();
@@ -463,8 +418,7 @@ class GraphPanel extends JPanel {
 
                     if (firstNodeSelectedForEdge == null) {
                         firstNodeSelectedForEdge = clickedNode;
-                        // Notificar que se ha seleccionado el nodo origen
-                        edgeCreationListener.onEdgeCreated(firstNodeSelectedForEdge, null, true, false); // True para no dirigida, false para dirigida
+                        edgeCreationListener.onEdgeCreated(firstNodeSelectedForEdge, null, true, false);
                         repaint();
                     } else {
                         if (clickedNode.equals(firstNodeSelectedForEdge)) {
@@ -473,9 +427,8 @@ class GraphPanel extends JPanel {
                             repaint();
                         } else {
                             try {
-                                // Llamada al nuevo método para añadir arista no dirigida
                                 graph.addUndirectedEdge(firstNodeSelectedForEdge, clickedNode); 
-                                edgeCreationListener.onEdgeCreated(firstNodeSelectedForEdge, clickedNode, true, false); // True para no dirigida, false para dirigida
+                                edgeCreationListener.onEdgeCreated(firstNodeSelectedForEdge, clickedNode, true, false);
                                 firstNodeSelectedForEdge = null;
                                 repaint();
                             } catch (IllegalArgumentException ex) {
@@ -483,14 +436,13 @@ class GraphPanel extends JPanel {
                                 firstNodeSelectedForEdge = null;
                                 repaint();
                             } catch (IllegalStateException ex) {
-                                // Para el caso de nodo especial como origen
                                 edgeCreationListener.onEdgeCreationError(ex.getMessage());
                                 firstNodeSelectedForEdge = null;
                                 repaint();
                             }
                         }
                     }
-                } else if (isDirectedEdgeMode) { // Nuevo: Modo para añadir aristas dirigidas
+                } else if (isDirectedEdgeMode) {
                     String clickedNode = getNodeAt(e.getPoint());
 
                     if (clickedNode == null) {
@@ -499,7 +451,6 @@ class GraphPanel extends JPanel {
                         return;
                     }
 
-                    // No se permiten aristas dirigidas hacia nodos especiales con este método
                     if (graph.isSpecialNode(clickedNode)) {
                         edgeCreationListener.onEdgeCreationError("No se pueden añadir aristas dirigidas hacia un nodo especial con este método.");
                         resetDirectedEdgeMode();
@@ -508,7 +459,7 @@ class GraphPanel extends JPanel {
 
                     if (firstNodeSelectedForEdge == null) {
                         firstNodeSelectedForEdge = clickedNode;
-                        edgeCreationListener.onEdgeCreated(firstNodeSelectedForEdge, null, false, true); // False para no dirigida, true para dirigida
+                        edgeCreationListener.onEdgeCreated(firstNodeSelectedForEdge, null, false, true);
                         repaint();
                     } else {
                         if (clickedNode.equals(firstNodeSelectedForEdge)) {
@@ -517,8 +468,8 @@ class GraphPanel extends JPanel {
                             repaint();
                         } else {
                             try {
-                                graph.addDirectedEdge(firstNodeSelectedForEdge, clickedNode, currentDirectedEdgeWeight); // Cambiado a addDirectedEdge
-                                edgeCreationListener.onEdgeCreated(firstNodeSelectedForEdge, clickedNode, false, true); // False para no dirigida, true para dirigida
+                                graph.addDirectedEdge(firstNodeSelectedForEdge, clickedNode, currentDirectedEdgeWeight); 
+                                edgeCreationListener.onEdgeCreated(firstNodeSelectedForEdge, clickedNode, false, true);
                                 firstNodeSelectedForEdge = null;
                                 repaint();
                             } catch (IllegalArgumentException ex) {
@@ -540,7 +491,7 @@ class GraphPanel extends JPanel {
                     } else {
                         nodeInteractionListener.onNodeClicked(null);
                     }
-                } else { // Modo normal, permite reflexión por clic si el juego está activo
+                } else {
                     String clickedNode = getNodeAt(e.getPoint());
                     if (clickedNode != null) {
                         nodeInteractionListener.onNodeClicked(clickedNode);
@@ -583,23 +534,22 @@ class GraphPanel extends JPanel {
         return firstNodeSelectedForEdge;
     }
 
-    public void startSimpleEdgeMode() { // Nuevo método para modo arista simple
+    public void startSimpleEdgeMode() {
         this.isSimpleEdgeMode = true;
         this.firstNodeSelectedForEdge = null;
         repaint();
     }
 
-    public void resetSimpleEdgeMode() { // Nuevo método para resetear modo arista simple
+    public void resetSimpleEdgeMode() {
         this.isSimpleEdgeMode = false;
         this.firstNodeSelectedForEdge = null;
         repaint();
     }
     
-    public boolean isSimpleEdgeMode() { // Nuevo método para verificar modo arista simple
+    public boolean isSimpleEdgeMode() {
         return isSimpleEdgeMode;
     }
 
-    // Nuevo: Métodos para el modo arista dirigida
     public void startDirectedEdgeMode(int weight) {
         this.isDirectedEdgeMode = true;
         this.currentDirectedEdgeWeight = weight;
@@ -609,7 +559,7 @@ class GraphPanel extends JPanel {
 
     public void resetDirectedEdgeMode() {
         this.isDirectedEdgeMode = false;
-        this.currentDirectedEdgeWeight = 1; // Resetear a peso predeterminado
+        this.currentDirectedEdgeWeight = 1;
         this.firstNodeSelectedForEdge = null;
         repaint();
     }
@@ -618,7 +568,6 @@ class GraphPanel extends JPanel {
         return isDirectedEdgeMode;
     }
 
-    // Nuevo: Getter para currentDirectedEdgeWeight
     public int getCurrentDirectedEdgeWeight() {
         return currentDirectedEdgeWeight;
     }
@@ -633,7 +582,6 @@ class GraphPanel extends JPanel {
         return isDeleteMode;
     }
 
-    // Convierte un número a su subíndice Unicode
     public String convertToSubscript(String numberString) { 
         StringBuilder subscript = new StringBuilder();
         for (char c : numberString.toCharArray()) {
@@ -654,7 +602,6 @@ class GraphPanel extends JPanel {
         return subscript.toString();
     }
 
-    // Obtiene la representación de visualización de un nodo lógico (ej. "1" -> "α₁", "2'" -> "α₂'")
     public String getNodeDisplayString(String logicalNodeName) {
         if (logicalNodeName.endsWith("'")) {
             String baseNodeLogicalName = logicalNodeName.substring(0, logicalNodeName.length() - 1);
@@ -700,52 +647,38 @@ class GraphPanel extends JPanel {
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 
-        // Conjunto para rastrear pares de nodos ya dibujados como aristas no dirigidas
-        // Esto evita dibujar dos veces una arista A-B (una por A->B y otra por B->A)
         Set<String> drawnUndirectedPairs = new HashSet<>();
 
-        // Dibujar solo aristas explícitas
         g2d.setColor(Color.LIGHT_GRAY);
         g2d.setStroke(new BasicStroke(2));
-        for (Edge edge : graph.getExplicitEdges()) { // Iterar SÓLO sobre aristas explícitas
+        for (Edge edge : graph.getExplicitEdges()) {
             Point p1 = nodePositions.get(edge.source);
             Point p2 = nodePositions.get(edge.target);
             
             if (p1 != null && p2 != null) {
-                // Para determinar si un par de aristas explícitas constituye una línea "simple" (no dirigida),
-                // necesitamos verificar si su inversa *explícita* también existe y ambas son de peso 1.
                 boolean hasExplicitReverseWeight1 = false;
                 for (Edge reverseEdge : graph.getExplicitEdges()) {
                     if (reverseEdge.source.equals(edge.target) && 
                         reverseEdge.target.equals(edge.source) && 
                         reverseEdge.weight == 1 &&
-                        edge.weight == 1) { // Asegurarse de que ambas direcciones explícitas sean peso 1
+                        edge.weight == 1) {
                         hasExplicitReverseWeight1 = true;
                         break;
                     }
                 }
                 
-                // Condición para dibujar como una línea simple no dirigida:
-                // 1. Tanto esta arista como su inversa explícita existen y tienen peso 1.
-                // 2. No involucra nodos especiales (los nodos especiales siempre se dibujan como dirigidos).
-                // 3. El par no dirigido no ha sido dibujado aún (para evitar dibujar la misma línea dos veces).
                 boolean isVisuallyUndirected = hasExplicitReverseWeight1 &&
                                                 !graph.isSpecialNode(edge.source) && 
                                                 !graph.isSpecialNode(edge.target);
 
-                // Generar una clave única para el par no dirigido (independiente del orden)
                 String undirectedPairKey = (edge.source.compareTo(edge.target) < 0) ? 
                                            (edge.source + "-" + edge.target) : 
                                            (edge.target + "-" + edge.source);
 
                 if (isVisuallyUndirected && !drawnUndirectedPairs.contains(undirectedPairKey)) {
-                    // Es una arista no dirigida simple: dibujar como una línea sin flecha
                     drawSimpleLine(g2d, p1.x, p1.y, p2.x, p2.y);
-                    drawnUndirectedPairs.add(undirectedPairKey); // Marcar el par como dibujado
+                    drawnUndirectedPairs.add(undirectedPairKey);
                 } else if (!isVisuallyUndirected) { 
-                    // Si NO es una arista visualmente no dirigida, o si es la inversa de un par ya dibujado (que saltamos)
-                    // Es una arista explícitamente dirigida (peso > 1, o peso 1 pero sin inversa explícita, o involucra un nodo especial)
-                    // Dibujar con una flecha y peso si aplica
                     drawArrowedLine(g2d, p1.x, p1.y, p2.x, p2.y, edge.weight);
                 }
             }
@@ -758,18 +691,18 @@ class GraphPanel extends JPanel {
 
             Color baseColor;
             if (graph.isSpecialNode(nodeName)) {
-                baseColor = Color.RED.darker(); // Nodos especiales: Rojo Oscuro
+                baseColor = Color.RED.darker();
             } else {
                 String state = game.getNodeState(nodeName);
                 switch (state) {
                     case "Happy":
-                        baseColor = new Color(102, 204, 102); // Feliz: Verde Medio
+                        baseColor = new Color(102, 204, 102);
                         break;
                     case "Sad":
-                        baseColor = Color.BLUE.darker(); // Triste: Azul Oscuro
+                        baseColor = Color.BLUE.darker();
                         break;
                     case "Excited":
-                        baseColor = Color.GREEN.darker(); // Emocionado: Verde Oscuro
+                        baseColor = Color.GREEN.darker();
                         break;
                     default:
                         baseColor = Color.GRAY;
@@ -777,11 +710,9 @@ class GraphPanel extends JPanel {
                 }
             }
 
-            // Sombra para el nodo
             g2d.setColor(new Color(0, 0, 0, 100));
             g2d.fillOval(p.x - NODE_SIZE / 2 + 5, p.y - NODE_SIZE / 2 + 5, NODE_SIZE, NODE_SIZE);
 
-            // Gradiente para el nodo
             Color brighterColor = baseColor.brighter().brighter();
             Color darkerColor = baseColor.darker().darker();
             
@@ -791,23 +722,22 @@ class GraphPanel extends JPanel {
             g2d.setPaint(gradient);
             g2d.fillOval(p.x - NODE_SIZE / 2, p.y - NODE_SIZE / 2, NODE_SIZE, NODE_SIZE);
 
-            // Borde del nodo según el modo
-            if ((isSimpleEdgeMode || isDirectedEdgeMode) && nodeName.equals(firstNodeSelectedForEdge)) { // Actualizado para ambos modos de arista
-                g2d.setColor(Color.CYAN); // Resaltar nodo origen en modo arista
+            if ((isSimpleEdgeMode || isDirectedEdgeMode) && nodeName.equals(firstNodeSelectedForEdge)) {
+                g2d.setColor(Color.CYAN);
                 g2d.setStroke(new BasicStroke(4));
                 g2d.drawOval(p.x - NODE_SIZE / 2 - 2, p.y - NODE_SIZE / 2 - 2, NODE_SIZE + 4, NODE_SIZE + 4);
             } else if (isDeleteMode) {
-                g2d.setColor(Color.RED); // Resaltar nodos en modo eliminar
+                g2d.setColor(Color.RED);
                 g2d.setStroke(new BasicStroke(4));
                 g2d.drawOval(p.x - NODE_SIZE / 2 - 2, p.y - NODE_SIZE / 2 - 2, NODE_SIZE + 4, NODE_SIZE + 4);
             } else {
-                g2d.setColor(Color.WHITE); // Borde normal
+                g2d.setColor(Color.WHITE);
                 g2d.setStroke(new BasicStroke(2));
                 g2d.drawOval(p.x - NODE_SIZE / 2, p.y - NODE_SIZE / 2, NODE_SIZE, NODE_SIZE);
             }
 
 
-            g2d.setColor(Color.WHITE); // Color del texto
+            g2d.setColor(Color.WHITE);
             
             String displayedNodeName = getNodeDisplayString(nodeName); 
             String chipsText = String.valueOf(graph.getChips(nodeName));
@@ -827,30 +757,25 @@ class GraphPanel extends JPanel {
         }
     }
     
-    // Método para dibujar una línea simple (no dirigida)
     private void drawSimpleLine(Graphics2D g2d, int x1, int y1, int x2, int y2) {
         g2d.drawLine(x1, y1, x2, y2);
     }
 
-    // Método para dibujar una línea con flecha (dirigida) y opcionalmente el peso
     private void drawArrowedLine(Graphics2D g2d, int x1, int y1, int x2, int y2, int weight) {
-        int ARR_SIZE = 10; // Tamaño de la punta de la flecha
+        int ARR_SIZE = 10;
         
-        // Calcular el ángulo de la línea
         double angle = Math.atan2(y2 - y1, x2 - x1);
         
-        // Ajustar el punto final de la línea para que la flecha no se superponga al nodo destino
         double dx = x2 - x1;
         double dy = y2 - y1;
         double distance = Math.sqrt(dx * dx + dy * dy);
-        double ratio = (distance - NODE_SIZE / 2.0) / distance; // Restar el radio del nodo destino
+        double ratio = (distance - NODE_SIZE / 2.0) / distance;
         
         int adjustedX2 = (int) (x1 + dx * ratio);
         int adjustedY2 = (int) (y1 + dy * ratio);
 
-        g2d.drawLine(x1, y1, adjustedX2, adjustedY2); // Dibujar la línea
+        g2d.drawLine(x1, y1, adjustedX2, adjustedY2);
 
-        // Dibujar la punta de la flecha
         AffineTransform tx = g2d.getTransform();
         g2d.translate(adjustedX2, adjustedY2);
         g2d.rotate(angle);
@@ -859,22 +784,18 @@ class GraphPanel extends JPanel {
         arrowHead.addPoint(-ARR_SIZE, ARR_SIZE / 2);
         arrowHead.addPoint(-ARR_SIZE, -ARR_SIZE / 2);
         g2d.fill(arrowHead);
-        g2d.setTransform(tx); // Restaurar la transformación
+        g2d.setTransform(tx);
 
-        // Dibujar el peso de la arista si es mayor que 1
         if (weight > 1) {
             String weightText = String.valueOf(weight);
-            // Calcular el punto medio de la arista (un poco desplazado para no superponerse)
             int midX = (x1 + adjustedX2) / 2;
             int midY = (y1 + adjustedY2) / 2;
             
-            // Desplazar el texto del peso perpendicular a la línea
-            // Para evitar que el texto quede sobre la línea
             double perpendicularAngle = angle + Math.PI / 2;
             int offsetX = (int) (10 * Math.cos(perpendicularAngle));
             int offsetY = (int) (10 * Math.sin(perpendicularAngle));
 
-            g2d.setColor(Color.WHITE); // Color del texto del peso
+            g2d.setColor(Color.WHITE);
             g2d.setFont(new Font("SansSerif", Font.PLAIN, 12));
             FontMetrics fm = g2d.getFontMetrics();
             int textWidth = fm.stringWidth(weightText);
@@ -901,14 +822,14 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
     private final GraphPanel graphPanel;
 
     private final JTextField nodeInput;
-    private final JTextField edgeSimpleInput; // Para mensajes de arista simple
+    private final JTextField edgeSimpleInput;
     private final JTextField initialNodeInput;
     private final JTextArea messageArea;
     
     private final JButton toggleNodeModeButton;
-    private final JButton toggleSimpleEdgeModeButton; // Botón para arista simple
-    private final JButton toggleDirectedEdgeModeButton; // Nuevo: Botón para arista dirigida
-    private final JSpinner directedEdgeWeightSpinner; // Nuevo: Spinner para el peso de arista dirigida
+    private final JButton toggleSimpleEdgeModeButton;
+    private final JButton toggleDirectedEdgeModeButton;
+    private final JSpinner directedEdgeWeightSpinner;
     private final JButton toggleDeleteModeButton;
     private final JButton initializeGameButton;
     private final JButton reflectButton;
@@ -967,7 +888,6 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         controlPanel.add(toggleNodeModeButton);
         controlPanel.add(Box.createVerticalStrut(10));
 
-        // Sección para Aristas Simples (No Dirigidas)
         JLabel simpleEdgeLabel = new JLabel("Añadir Arista Simple (No Dirigida)");
         simpleEdgeLabel.setForeground(Color.WHITE);
         controlPanel.add(simpleEdgeLabel);
@@ -984,7 +904,6 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         controlPanel.add(toggleSimpleEdgeModeButton); 
         controlPanel.add(Box.createVerticalStrut(10));
 
-        // Sección para Aristas Dirigidas (con peso) - Ahora con selección manual
         JLabel directedEdgeLabel = new JLabel("Añadir Arista Dirigida");
         directedEdgeLabel.setForeground(Color.WHITE);
         controlPanel.add(directedEdgeLabel);
@@ -998,15 +917,15 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         directedEdgeInputPanel.add(weightLabel);
         directedEdgeInputPanel.add(Box.createHorizontalStrut(5));
 
-        SpinnerModel weightModel = new SpinnerNumberModel(1, 1, 10, 1); // Valor inicial 1, mínimo 1, máximo 10, paso 1
+        SpinnerModel weightModel = new SpinnerNumberModel(1, 1, 10, 1);
         directedEdgeWeightSpinner = new JSpinner(weightModel);
         directedEdgeWeightSpinner.setMaximumSize(new Dimension(80, directedEdgeWeightSpinner.getPreferredSize().height));
-        ((JSpinner.DefaultEditor) directedEdgeWeightSpinner.getEditor()).getTextField().setEditable(false); // No permitir edición de texto
+        ((JSpinner.DefaultEditor) directedEdgeWeightSpinner.getEditor()).getTextField().setEditable(false);
         directedEdgeInputPanel.add(directedEdgeWeightSpinner);
-        directedEdgeInputPanel.add(Box.createHorizontalGlue()); // Para empujar el spinner a la izquierda
+        directedEdgeInputPanel.add(Box.createHorizontalGlue());
         
         controlPanel.add(directedEdgeInputPanel);
-        controlPanel.add(Box.createVerticalStrut(5)); // Espacio entre spinner y botón
+        controlPanel.add(Box.createVerticalStrut(5));
         
         toggleDirectedEdgeModeButton = new JButton("Activar Modo Arista Dirigida");
         toggleDirectedEdgeModeButton.setBackground(new Color(70, 130, 180).darker());
@@ -1038,7 +957,7 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         targetNodeSelector = new JComboBox<>();
         targetNodeSelector.setMaximumSize(new Dimension(Integer.MAX_VALUE, targetNodeSelector.getPreferredSize().height));
         targetNodeSelector.setAlignmentX(Component.LEFT_ALIGNMENT);
-        specialNodePanel.add(targetNodeSelector); // Corrected from targetNodeNodeSelector
+        specialNodePanel.add(targetNodeSelector);
 
         addSpecialNodeButton = new JButton("Añadir Nodo Siempre Feliz");
         addSpecialNodeButton.setBackground(new Color(180, 100, 20));
@@ -1056,6 +975,7 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         controlPanel.add(initialNodeLabel);
         initialNodeInput = new JTextField(15);
         initialNodeInput.setMaximumSize(new Dimension(Integer.MAX_VALUE, initialNodeInput.getPreferredSize().height));
+        initialNodeInput.setToolTipText("Ingrese el índice numérico del nodo, ej. 1 para α₁.");
         initializeGameButton = new JButton("Inicializar Juego");
         initializeGameButton.setBackground(new Color(50, 110, 160));
         initializeGameButton.setForeground(Color.WHITE);
@@ -1176,10 +1096,10 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
             toggleNodeModeButton.setText("Activar Modo Nodo");
             nodeInput.setText(graphPanel.getNodeDisplayString(String.valueOf(nodeCounter)));
         } else {
-            if (graphPanel.isSimpleEdgeMode()) { // Desactivar modo arista simple
+            if (graphPanel.isSimpleEdgeMode()) {
                 toggleSimpleEdgeMode();
             }
-            if (graphPanel.isDirectedEdgeMode()) { // Desactivar modo arista dirigida
+            if (graphPanel.isDirectedEdgeMode()) {
                 toggleDirectedEdgeMode();
             }
             if (graphPanel.isDeleteMode()) {
@@ -1207,8 +1127,8 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         graphPanel.updateGraphDisplay();
 
         if (graph.getAllNodes().stream().filter(node -> !graph.isSpecialNode(node)).count() >= 2) {
-            toggleSimpleEdgeModeButton.setEnabled(true); // Habilitar arista simple
-            toggleDirectedEdgeModeButton.setEnabled(true); // Habilitar arista dirigida
+            toggleSimpleEdgeModeButton.setEnabled(true);
+            toggleDirectedEdgeModeButton.setEnabled(true);
         }
         if (graph.getAllNodes().stream().anyMatch(node -> !graph.isSpecialNode(node))) {
             addSpecialNodeButton.setEnabled(true);
@@ -1232,7 +1152,6 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
     }
 
 
-    // Nuevo método para el botón de Arista Simple (No Dirigida)
     private void toggleSimpleEdgeMode() {
         if (graphPanel.isSimpleEdgeMode()) {
             graphPanel.resetSimpleEdgeMode();
@@ -1248,7 +1167,7 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
             if (graphPanel.isNodeMode()) {
                 toggleNodeMode();
             }
-            if (graphPanel.isDirectedEdgeMode()) { // Desactivar modo arista dirigida
+            if (graphPanel.isDirectedEdgeMode()) {
                 toggleDirectedEdgeMode();
             }
             if (graphPanel.isDeleteMode()) {
@@ -1265,7 +1184,6 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         }
     }
 
-    // Nuevo método para el botón de Arista Dirigida
     private void toggleDirectedEdgeMode() {
         if (graphPanel.isDirectedEdgeMode()) {
             graphPanel.resetDirectedEdgeMode();
@@ -1280,7 +1198,7 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
             if (graphPanel.isNodeMode()) {
                 toggleNodeMode();
             }
-            if (graphPanel.isSimpleEdgeMode()) { // Desactivar modo arista simple
+            if (graphPanel.isSimpleEdgeMode()) {
                 toggleSimpleEdgeMode();
             }
             if (graphPanel.isDeleteMode()) {
@@ -1298,7 +1216,6 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
     }
 
 
-    // Reutilizar onEdgeCreated, añadiendo los parámetros isUndirected y isDirected
     @Override
     public void onEdgeCreated(String sourceNode, String targetNode, boolean isUndirected, boolean isDirected) {
         if (targetNode == null) {
@@ -1311,15 +1228,10 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
                 showMessage("Arista no dirigida creada entre '" + graphPanel.getNodeDisplayString(sourceNode) + "' y '" + graphPanel.getNodeDisplayString(targetNode) + "'.", "Success");
                 edgeSimpleInput.setText("Arista creada. Selecciona el PRIMER nodo para la siguiente...");
             } else if (isDirected) {
-                // Para aristas dirigidas, necesitamos el peso real que se acaba de añadir explícitamente
-                // Este peso es el que el usuario seleccionó con el spinner.
-                // El graph.getEdgeWeight(sourceNode, targetNode) ahora devuelve el peso EFECTIVO (incluyendo implícitos)
-                // Pero aquí queremos el peso de la arista explícita que se acaba de crear.
-                // La variable 'currentDirectedEdgeWeight' del GraphPanel tiene el peso que se usó.
                 showMessage("Arista dirigida '" + graphPanel.getNodeDisplayString(sourceNode) + "' -> '" + graphPanel.getNodeDisplayString(targetNode) + "' (Peso: " + graphPanel.getCurrentDirectedEdgeWeight() + ") creada.", "Success");
             }
         }
-        if (!graph.getExplicitEdges().isEmpty()) { // Usar getExplicitEdges para habilitar inicialización
+        if (!graph.getExplicitEdges().isEmpty()) {
             initializeGameButton.setEnabled(true);
         }
         setControlsEnabled(true);
@@ -1330,7 +1242,7 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
     public void onEdgeCreationCancelled(String message) {
         showMessage(message, "Warning");
         setControlsEnabled(true);
-        edgeSimpleInput.setText("Clic en 2 nodos..."); // Ajustado para arista simple
+        edgeSimpleInput.setText("Clic en 2 nodos...");
         toggleSimpleEdgeModeButton.setText("Activar Modo Arista Simple");
         toggleDirectedEdgeModeButton.setText("Activar Modo Arista Dirigida");
     }
@@ -1338,7 +1250,7 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
     @Override
     public void onEdgeCreationError(String message) {
         showMessage("Error al crear arista: " + message, "Error");
-        edgeSimpleInput.setText("Clic en 2 nodos..."); // Ajustado para arista simple
+        edgeSimpleInput.setText("Clic en 2 nodos...");
     }
 
     private void toggleDeleteMode() {
@@ -1351,10 +1263,10 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
             if (graphPanel.isNodeMode()) {
                 toggleNodeMode();
             }
-            if (graphPanel.isSimpleEdgeMode()) { // Desactivar modo arista simple
+            if (graphPanel.isSimpleEdgeMode()) {
                 toggleSimpleEdgeMode();
             }
-            if (graphPanel.isDirectedEdgeMode()) { // Desactivar modo arista dirigida
+            if (graphPanel.isDirectedEdgeMode()) {
                 toggleDirectedEdgeMode();
             }
 
@@ -1372,7 +1284,6 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         targetNodeSelector.removeAllItems();
         List<String> allNodes = graph.getAllNodes();
         for (String nodeLogicalName : allNodes) {
-            // Solo añadir nodos regulares (no especiales) que no tengan ya un nodo especial asociado
             if (!graph.isSpecialNode(nodeLogicalName) && !graph.isSpecialNode(nodeLogicalName + "'")) {
                 targetNodeSelector.addItem(graphPanel.getNodeDisplayString(nodeLogicalName));
             }
@@ -1393,10 +1304,8 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
             Point targetPos = graphPanel.getNodePosition(targetLogicalName); 
             Point newSpecialNodePos;
             if (targetPos != null) {
-                // Posicionar el nodo especial un poco encima del nodo base
                 newSpecialNodePos = new Point(targetPos.x, targetPos.y - (graphPanel.getNodeSize() + 10));
             } else {
-                // Fallback si la posición del nodo base no se encuentra (debería existir)
                 newSpecialNodePos = new Point(getWidth() / 2 + (int)(Math.random() * 100 - 50), getHeight() / 2 + (int)(Math.random() * 100 - 50)); 
             }
 
@@ -1410,7 +1319,6 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         }
     }
 
-    // Convierte el nombre de visualización (ej. "α₁") a nombre lógico (ej. "1")
     private String convertSubscriptToNormal(String displayString) {
         StringBuilder normal = new StringBuilder();
         String numberPart = displayString;
@@ -1468,7 +1376,7 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
                 showMessage("Eliminación del nodo '" + graphPanel.getNodeDisplayString(nodeLogicalName) + "' cancelada.", "Info");
             }
             toggleDeleteMode();
-        } else if (!graphPanel.isNodeMode() && !graphPanel.isSimpleEdgeMode() && !graphPanel.isDirectedEdgeMode() && !graphPanel.isDeleteMode() && isGameActive) { // Asegurarse que no esté en ningún modo de edición
+        } else if (!graphPanel.isNodeMode() && !graphPanel.isSimpleEdgeMode() && !graphPanel.isDirectedEdgeMode() && !graphPanel.isDeleteMode() && isGameActive) {
             if (graph.isSpecialNode(nodeLogicalName)) {
                 showMessage("El nodo '" + graphPanel.getNodeDisplayString(nodeLogicalName) + "' es un nodo siempre feliz y no puede ser reflejado.", "Warning");
             } else if (game.getNodeState(nodeLogicalName).equals("Sad")) { 
@@ -1549,13 +1457,11 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
         }
         
         if (autoPlayWorker != null && !autoPlayWorker.isDone()) {
-            // Si ya está ejecutándose, acelerarlo
             currentDelayMillis = Math.max(MIN_DELAY_MILLIS, currentDelayMillis / 2);
             showMessage("Juego automático acelerado. Retraso: " + currentDelayMillis + "ms", "Info");
-            return; // No iniciar un nuevo worker, solo ajustar la velocidad
+            return;
         }
 
-        // Deshabilitar todos los controles mientras el juego automático se ejecuta
         setControlsEnabled(false); 
         newGraphButton.setEnabled(true); 
         resetGameConfigButton.setEnabled(true);
@@ -1563,17 +1469,15 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
 
         showMessage("Iniciando juego automático... Por favor, espera.", "Info"); 
         
-        // Reiniciar el retraso al iniciar una nueva sesión de juego automático
         currentDelayMillis = 500; 
 
         autoPlayWorker = new SwingWorker<Integer, String>() {
             @Override
             protected Integer doInBackground() throws Exception {
                 int stepsTaken = 0;
-                int maxSteps = 500; // Límite para prevenir bucles infinitos
+                int maxSteps = 500;
 
                 while (stepsTaken < maxSteps) {
-                    // Verificar cancelación al principio de cada iteración
                     if (isCancelled()) {
                         break; 
                     }
@@ -1587,22 +1491,20 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
                     String nodeToReflect = unhappyNodes.get(0);
                     try {
                         game.performReflection(nodeToReflect);
-                        publish(""); // Publicar una cadena vacía para activar la repintada de la UI en el EDT
+                        publish("");
                         
-                        // Verificar cancelación antes de dormir
                         if (isCancelled()) {
                             break;
                         }
-                        Thread.sleep(currentDelayMillis); // Usar el retraso dinámico
+                        Thread.sleep(currentDelayMillis);
                     }
                     catch (IllegalStateException e) {
                         publish("Error inesperado durante la reflexión automática: " + e.getMessage());
                         break;
                     }
                     catch (InterruptedException e) {
-                        // Manejar interrupción específicamente, a menudo significa cancelación
                         publish("Juego automático interrumpido.");
-                        Thread.currentThread().interrupt(); // Restaurar el estado interrumpido
+                        Thread.currentThread().interrupt();
                         break;
                     }
                     stepsTaken++;
@@ -1615,20 +1517,18 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
 
             @Override
             protected void process(List<String> chunks) {
-                // Este método se ejecuta en el Event Dispatch Thread (EDT)
                 for (String messageChunk : chunks) {
                     if (!messageChunk.isEmpty()) {
                         showMessage(messageChunk, "Info");
                     }
                 }
-                graphPanel.updateGraphDisplay(); // Actualizar la visualización después de cada paso
+                graphPanel.updateGraphDisplay();
             }
 
             @Override
             protected void done() {
-                autoPlayWorker = null; // Limpiar la referencia del worker una vez que ha terminado o se ha cancelado
+                autoPlayWorker = null;
                 try {
-                    // Verificar si el worker fue cancelado
                     if (isCancelled()) {
                         showMessage("Juego automático cancelado.", "Warning"); 
                         return;
@@ -1647,7 +1547,7 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
                     e.printStackTrace();
                 } finally {
                     graphPanel.updateGraphDisplay();
-                    setControlsEnabled(true); // Re-habilitar todos los controles
+                    setControlsEnabled(true);
                 }
             }
         };
@@ -1664,16 +1564,15 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
     }
 
     private void resetGameConfiguration() {
-        // Cancelar el autoPlayWorker si se está ejecutando
         if (autoPlayWorker != null && !autoPlayWorker.isDone()) {
             autoPlayWorker.cancel(true);
         }
 
         for (String node : graph.getAllNodes()) {
-            graph.setChips(node, 0);
+            graph.setChips(node, BigInteger.ZERO);
         }
         for (String specialNode : graph.getSpecialNodesLogicalNames()) {
-            graph.setChips(specialNode, 1);
+            graph.setChips(specialNode, BigInteger.ONE);
         }
 
         isGameActive = false;
@@ -1683,77 +1582,91 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
     }
 
     private void setControlsEnabled(boolean enabled) {
-        // Deshabilitar todos los controles de creación/eliminación/configuración del juego si un modo está activo
-        if (graphPanel.isNodeMode() || graphPanel.isSimpleEdgeMode() || graphPanel.isDirectedEdgeMode() || graphPanel.isDeleteMode()) { 
-            toggleNodeModeButton.setEnabled(graphPanel.isNodeMode());
-            toggleNodeModeButton.setText(graphPanel.isNodeMode() ? "Cancelar Modo Nodo" : "Activar Modo Nodo");
-
-            toggleSimpleEdgeModeButton.setEnabled(graphPanel.isSimpleEdgeMode()); 
-            toggleSimpleEdgeModeButton.setText(graphPanel.isSimpleEdgeMode() ? "Cancelar Modo Arista Simple" : "Activar Modo Arista Simple"); 
-
-            toggleDirectedEdgeModeButton.setEnabled(graphPanel.isDirectedEdgeMode()); // Nuevo: Habilitar/deshabilitar botón
-            toggleDirectedEdgeModeButton.setText(graphPanel.isDirectedEdgeMode() ? "Cancelar Modo Arista Dirigida" : "Activar Modo Arista Dirigida"); // Nuevo: Texto del botón
-
-            toggleDeleteModeButton.setEnabled(graphPanel.isDeleteMode());
-            toggleDeleteModeButton.setText(graphPanel.isDeleteMode() ? "Cancelar Eliminación" : "Eliminar Nodo");
-
-            // Deshabilitar otros botones mientras se está en un modo de edición
+        if (graphPanel.isNodeMode()) {
+            toggleNodeModeButton.setEnabled(true);
+            toggleNodeModeButton.setText("Cancelar Modo Nodo");
+            toggleSimpleEdgeModeButton.setEnabled(false); 
+            toggleDirectedEdgeModeButton.setEnabled(false);
+            directedEdgeWeightSpinner.setEnabled(false);
+            toggleDeleteModeButton.setEnabled(false);
             initializeGameButton.setEnabled(false);
             reflectButton.setEnabled(false);
             playFullButton.setEnabled(false);
-            stopAutoPlayButton.setEnabled(false); 
+            stopAutoPlayButton.setEnabled(false);
             addSpecialNodeButton.setEnabled(false);
             targetNodeSelector.setEnabled(false);
             nodeInput.setText(graphPanel.getNodeDisplayString(String.valueOf(nodeCounter)));
             initialNodeInput.setEnabled(false);
-            resetGameConfigButton.setEnabled(false);
-            directedEdgeWeightSpinner.setEnabled(false); // Nuevo: Deshabilitar spinner
-        } 
-        else if (isGameActive) { // Si el juego está activo
-            // Deshabilitar botones de construcción/edición del grafo
+            resetGameConfigButton.setEnabled(false); 
+        } else if (graphPanel.isSimpleEdgeMode()) {
+            toggleSimpleEdgeModeButton.setEnabled(true); 
+            toggleSimpleEdgeModeButton.setText("Cancelar Modo Arista Simple"); 
             toggleNodeModeButton.setEnabled(false);
-            toggleSimpleEdgeModeButton.setEnabled(false); 
-            toggleDirectedEdgeModeButton.setEnabled(false); // Nuevo
-            directedEdgeWeightSpinner.setEnabled(false); // Nuevo
+            toggleDirectedEdgeModeButton.setEnabled(false);
+            directedEdgeWeightSpinner.setEnabled(false);
             toggleDeleteModeButton.setEnabled(false);
             initializeGameButton.setEnabled(false);
-            initialNodeInput.setEnabled(false);
+            reflectButton.setEnabled(false);
+            playFullButton.setEnabled(false);
+            stopAutoPlayButton.setEnabled(false);
             addSpecialNodeButton.setEnabled(false);
             targetNodeSelector.setEnabled(false);
-
-
-            boolean hasUnhappyNodes = !game.getUnhappyNodes().isEmpty();
-            boolean isAutoPlaying = (autoPlayWorker != null && !autoPlayWorker.isDone());
-
-            reflectButton.setEnabled(hasUnhappyNodes && !isAutoPlaying); // Solo habilitar si no hay juego automático
-            playFullButton.setEnabled(hasUnhappyNodes); // Siempre habilitado para permitir aceleración
-            stopAutoPlayButton.setEnabled(isAutoPlaying); // Habilitar solo si hay juego automático
-            resetGameConfigButton.setEnabled(true); // Siempre permitido reiniciar el estado del juego
-        }
-        else { // Estado predeterminado (ningún modo activo, juego no inicializado)
+            edgeSimpleInput.setText("Selecciona " + (graphPanel.getFirstNodeSelectedForEdge() == null ? "el PRIMER" : "el SEGUNDO") + " nodo...");
+            initialNodeInput.setEnabled(false); 
+            resetGameConfigButton.setEnabled(false);
+        } else if (graphPanel.isDirectedEdgeMode()) {
+            toggleDirectedEdgeModeButton.setEnabled(true); 
+            toggleDirectedEdgeModeButton.setText("Cancelar Modo Arista Dirigida"); 
+            toggleNodeModeButton.setEnabled(false);
+            toggleSimpleEdgeModeButton.setEnabled(false);
+            toggleDeleteModeButton.setEnabled(false);
+            initializeGameButton.setEnabled(false);
+            reflectButton.setEnabled(false);
+            playFullButton.setEnabled(false);
+            stopAutoPlayButton.setEnabled(false);
+            addSpecialNodeButton.setEnabled(false);
+            targetNodeSelector.setEnabled(false);
+            initialNodeInput.setEnabled(false); 
+            resetGameConfigButton.setEnabled(false);
+            directedEdgeWeightSpinner.setEnabled(false);
+        } else if (graphPanel.isDeleteMode()) {
+            toggleDeleteModeButton.setEnabled(true);
+            toggleDeleteModeButton.setText("Cancelar Eliminación");
+            toggleNodeModeButton.setEnabled(false);
+            toggleSimpleEdgeModeButton.setEnabled(false);
+            toggleDirectedEdgeModeButton.setEnabled(false);
+            directedEdgeWeightSpinner.setEnabled(false);
+            initializeGameButton.setEnabled(false);
+            reflectButton.setEnabled(false);
+            playFullButton.setEnabled(false);
+            stopAutoPlayButton.setEnabled(false);
+            addSpecialNodeButton.setEnabled(false);
+            targetNodeSelector.setEnabled(false);
+            initialNodeInput.setEnabled(false);
+            resetGameConfigButton.setEnabled(false);
+        } 
+        else {
             toggleNodeModeButton.setEnabled(enabled);
             toggleNodeModeButton.setText("Activar Modo Nodo");
             nodeInput.setText(graphPanel.getNodeDisplayString(String.valueOf(nodeCounter)));
 
-            // Habilitar añadir arista simple por clic solo si hay al menos 2 nodos regulares
             toggleSimpleEdgeModeButton.setEnabled(enabled && graph.getAllNodes().stream().filter(node -> !graph.isSpecialNode(node)).count() >= 2); 
             toggleSimpleEdgeModeButton.setText("Activar Modo Arista Simple"); 
             edgeSimpleInput.setText("Clic en 2 nodos...");
             
-            // Habilitar añadir arista dirigida por clic solo si hay al menos 2 nodos regulares
-            toggleDirectedEdgeModeButton.setEnabled(enabled && graph.getAllNodes().stream().filter(node -> !graph.isSpecialNode(node)).count() >= 2); // Nuevo
-            toggleDirectedEdgeModeButton.setText("Activar Modo Arista Dirigida"); // Nuevo
-            directedEdgeWeightSpinner.setEnabled(enabled); // Nuevo: Habilitar spinner
+            toggleDirectedEdgeModeButton.setEnabled(enabled && graph.getAllNodes().stream().filter(node -> !graph.isSpecialNode(node)).count() >= 2);
+            toggleDirectedEdgeModeButton.setText("Activar Modo Arista Dirigida");
+            directedEdgeWeightSpinner.setEnabled(enabled);
             
             toggleDeleteModeButton.setEnabled(enabled && !graph.getAllNodes().isEmpty());
             toggleDeleteModeButton.setText("Eliminar Nodo");
 
             boolean hasRegularNodes = graph.getAllNodes().stream().anyMatch(node -> !graph.isSpecialNode(node));
+            
             boolean canAddMoreSpecialNodes = false;
             if (hasRegularNodes) {
                 for (String nodeLogicalName : graph.getAllNodes()) {
                     if (!graph.isSpecialNode(nodeLogicalName)) {
-                        // Puede añadir un nodo especial si el nodo regular no tiene ya uno asociado
                         if (!graph.isSpecialNode(nodeLogicalName + "'")) { 
                             canAddMoreSpecialNodes = true;
                             break;
@@ -1767,51 +1680,69 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
             if (addSpecialNodeButton.isEnabled()) {
                 populateTargetNodeSelector();
             } else {
-                targetNodeSelector.removeAllItems(); // Limpiar selector si no se puede añadir
+                targetNodeSelector.removeAllItems();
             }
-            
-            boolean hasAnyNodes = !graph.getAllNodes().isEmpty();
-            boolean hasExplicitEdges = !graph.getExplicitEdges().isEmpty(); // Cambiado a getExplicitEdges()
-            boolean hasSpecialNodes = !graph.getSpecialNodesLogicalNames().isEmpty();
-            // Inicializar juego habilitado si hay nodos especiales O si hay nodos y se ha introducido un nodo inicial
-            initializeGameButton.setEnabled(enabled && (hasSpecialNodes || (hasAnyNodes && !initialNodeInput.getText().trim().isEmpty() && hasExplicitEdges))); // También se requieren aristas explícitas
-            initialNodeInput.setEnabled(enabled && !hasSpecialNodes && hasAnyNodes); // Habilitar input si no hay especiales
 
-            reflectButton.setEnabled(false);
-            playFullButton.setEnabled(false);
-            stopAutoPlayButton.setEnabled(false);
-            resetGameConfigButton.setEnabled(enabled && hasAnyNodes); // Habilitar si hay nodos para reiniciar
+
+            if (isGameActive) {
+                initializeGameButton.setEnabled(false);
+                initialNodeInput.setEnabled(false);
+                boolean hasUnhappyNodes = !game.getUnhappyNodes().isEmpty();
+                reflectButton.setEnabled(hasUnhappyNodes);
+                playFullButton.setEnabled(hasUnhappyNodes);
+                stopAutoPlayButton.setEnabled(autoPlayWorker != null && !autoPlayWorker.isDone());
+                toggleNodeModeButton.setEnabled(false); 
+                toggleSimpleEdgeModeButton.setEnabled(false);
+                toggleDirectedEdgeModeButton.setEnabled(false);
+                directedEdgeWeightSpinner.setEnabled(false);
+                toggleDeleteModeButton.setEnabled(false);
+                addSpecialNodeButton.setEnabled(false);
+                targetNodeSelector.setEnabled(false);
+                resetGameConfigButton.setEnabled(true);
+            } else {
+                boolean hasAnyNodes = !graph.getAllNodes().isEmpty();
+                boolean hasSpecialNodes = !graph.getSpecialNodesLogicalNames().isEmpty();
+                boolean hasExplicitEdges = !graph.getExplicitEdges().isEmpty();
+
+                initializeGameButton.setEnabled(enabled && (hasSpecialNodes || (hasAnyNodes && !initialNodeInput.getText().trim().isEmpty() && hasExplicitEdges)));
+                
+                initialNodeInput.setEnabled(enabled && !hasSpecialNodes && hasAnyNodes);
+
+                reflectButton.setEnabled(false);
+                playFullButton.setEnabled(false);
+                stopAutoPlayButton.setEnabled(false);
+                resetGameConfigButton.setEnabled(enabled && hasAnyNodes);
+            }
         }
         
-        newGraphButton.setEnabled(true); // Este botón siempre está habilitado
+        newGraphButton.setEnabled(true);
     }
 
     private void resetApplication() {
-        // Cancelar el autoPlayWorker si se está ejecutando
         if (autoPlayWorker != null && !autoPlayWorker.isDone()) {
             autoPlayWorker.cancel(true);
         }
 
-        graphPanel.resetNodePositions();
+        graphPanel.resetNodePositions(); 
         graphPanel.setNodeMode(false);
-        graphPanel.resetSimpleEdgeMode(); // Resetea el modo de arista simple
-        graphPanel.resetDirectedEdgeMode(); // Nuevo: Resetea el modo de arista dirigida
+        graphPanel.resetSimpleEdgeMode(); 
+        graphPanel.resetDirectedEdgeMode(); 
         graphPanel.setDeleteMode(false);
         
         graph.clear();
         nodeCounter = 1;
         isGameActive = false;
-        currentDelayMillis = 500; // Reiniciar el retraso a predeterminado
+        currentDelayMillis = 500;
         
         nodeInput.setText(graphPanel.getNodeDisplayString(String.valueOf(nodeCounter)));
-        edgeSimpleInput.setText("Clic en 2 nodos..."); // Restablecer texto de arista simple
-        // edgeDirectedInput ya no existe, el spinner maneja su valor predeterminado
+        edgeSimpleInput.setText("Clic en 2 nodos...");
         initialNodeInput.setText("");
         messageArea.setText("");
         
         showMessage("Aplicación reiniciada. Puedes crear un nuevo grafo.", "Info");
         setControlsEnabled(true);
     }
+
 
     private void showMessage(final String msg, final String type) {
         final String prefix; 
@@ -1843,14 +1774,12 @@ public class KostantGameGUI extends JFrame implements NodePlacementListener, Edg
                 try {
                     KostantGameGUI app = new KostantGameGUI();
                     app.setVisible(true);
-                }
-                catch (Exception e) {
+                } catch (Exception e) {
                     System.err.println("Error durante la inicialización de la GUI: " + e.getMessage());
                     e.printStackTrace();
                 }
             });
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             System.err.println("Error crítico al iniciar la aplicación Swing: " + e.getMessage());
             e.printStackTrace();
         }
